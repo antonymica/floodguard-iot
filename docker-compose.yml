@@ -1,0 +1,88 @@
+services:
+  influxdb:
+    image: influxdb:2.7
+    container_name: floodguard-influxdb
+    restart: unless-stopped
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_USERNAME}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUXDB_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUXDB_BUCKET}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN}
+    ports:
+      - '8086:8086'
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    networks:
+      - floodguard_net
+
+  telegraf:
+    image: telegraf:latest
+    container_name: floodguard-telegraf
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    depends_on:
+      - influxdb
+    networks:
+      - floodguard_net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: floodguard-grafana
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+    ports:
+      - '3000:3000'
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - influxdb
+    networks:
+      - floodguard_net
+
+  node-red:
+    image: nodered/node-red:latest
+    container_name: floodguard-node-red
+    restart: unless-stopped
+    ports:
+      - '1880:1880'
+    volumes:
+      - node_red_data:/data
+    networks:
+      - floodguard_net
+
+  mqtt-listener:
+    image: eclipse-mosquitto:2
+    container_name: floodguard-mqtt-listener
+    restart: unless-stopped
+    env_file:
+      - .env
+    entrypoint: /bin/sh
+    command: >
+      -c 'mosquitto_sub
+      -h "$$MQTT_BROKER"
+      -p "$$MQTT_PORT"
+      -t "$$MQTT_TOPIC"
+      -v'
+    networks:
+      - floodguard_net
+
+networks:
+  floodguard_net:
+    driver: bridge
+
+volumes:
+  influxdb_data:
+  grafana_data:
+  node_red_data:
