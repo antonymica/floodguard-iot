@@ -593,8 +593,8 @@ Puis relance la simulation Wokwi.
 Tu dois voir des lignes comme :
 
 ```
-eni/m2/iot/floodguard/mica-tahintsoa-2026/telemetry {"device_id":"esp32-floodguard-sim-01","water_level":713,"status":"NORMAL","status_code":0,"alert":false,"alert_value":0,"source":"wokwi"}
-eni/m2/iot/floodguard/mica-tahintsoa-2026/telemetry {"device_id":"esp32-floodguard-sim-01","water_level":3290,"status":"DANGER","status_code":2,"alert":true,"alert_value":1,"source":"wokwi"}
+floodguard-mqtt-listener  | eni/m2/iot/floodguard/mica-tahintsoa-2026/telemetry {"project":"FloodGuard Smart Area","device_id":"esp32-floodguard-zone-01","location":"Zone basse - Quartier pilote","source":"wokwi","distance_cm":100,"water_level_cm":0,"water_percent":0,"rain_intensity":100,"water_delta_cm":0,"trend":"STABLE","trend_code":0,"risk_level":"WARNING","risk_code":2,"risk_score":25,"alert":true,"alert_value":1,"led_green_state":0,"led_yellow_state":1,"led_red_state":0,"buzzer_state":1,"wifi_rssi":-83,"uptime_sec":120}
+floodguard-mqtt-listener  | eni/m2/iot/floodguard/mica-tahintsoa-2026/telemetry {"project":"FloodGuard Smart Area","device_id":"esp32-floodguard-zone-01","location":"Zone basse - Quartier pilote","source":"wokwi","distance_cm":100,"water_level_cm":0,"water_percent":0,"rain_intensity":47,"water_delta_cm":0,"trend":"STABLE","trend_code":0,"risk_level":"WATCH","risk_code":1,"risk_score":11,"alert":false,"alert_value":0,"led_green_state":0,"led_yellow_state":1,"led_red_state":0,"buzzer_state":0,"wifi_rssi":-87,"uptime_sec":123}
 ```
 
 #### Vérifier Telegraf
