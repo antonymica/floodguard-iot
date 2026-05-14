@@ -15,52 +15,61 @@ Lien du projet sur wokwi: `https://wokwi.com/projects/463084862922628097`
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
-#define WATER_SENSOR_PIN 34
-#define LED_PIN 2
+// =======================
+// Pins - Capteurs
+// =======================
+#define RAIN_SENSOR_PIN 34
+#define TRIG_PIN 5
+#define ECHO_PIN 18
+
+// =======================
+// Pins - Actionneurs
+// =======================
+#define LED_GREEN_PIN 12
+#define LED_YELLOW_PIN 14
+#define LED_RED_PIN 2
 #define BUZZER_PIN 15
 
+// =======================
+// Wi-Fi Wokwi
+// =======================
 const char* WIFI_SSID = "Wokwi-GUEST";
 const char* WIFI_PASSWORD = "";
 
+// =======================
+// MQTT public
+// =======================
 const char* MQTT_HOST = "broker.hivemq.com";
-// Alternative si besoin : "broker.emqx.io"
-// Alternative si besoin : "test.mosquitto.org"
-
 const int MQTT_PORT = 1883;
-
-const char* DEVICE_ID = "esp32-floodguard-sim-01";
 const char* MQTT_TOPIC = "eni/m2/iot/floodguard/mica-tahintsoa-2026/telemetry";
+
+// =======================
+// Métadonnées IoT
+// =======================
+const char* DEVICE_ID = "esp32-floodguard-zone-01";
+const char* PROJECT_NAME = "FloodGuard Smart Area";
+const char* LOCATION = "Zone basse - Quartier pilote";
+const char* SOURCE = "wokwi";
+
+// =======================
+// Paramètres simulation
+// =======================
+// Distance maximale entre le capteur ultrason et le fond simulé.
+// Si distance = 100 cm : eau basse.
+// Si distance = 10 cm  : eau haute.
+const float MAX_WATER_HEIGHT_CM = 100.0;
+
+const unsigned long PUBLISH_INTERVAL_MS = 3000;
+
+float previousWaterLevelCm = -1.0;
+unsigned long lastPublish = 0;
 
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
-unsigned long lastPublish = 0;
-const unsigned long PUBLISH_INTERVAL = 3000;
-
-String getStatus(int waterLevel) {
-  if (waterLevel < 1300) {
-    return "NORMAL";
-  }
-
-  if (waterLevel < 2700) {
-    return "HUMIDE";
-  }
-
-  return "DANGER";
-}
-
-int getStatusCode(String status) {
-  if (status == "NORMAL") {
-    return 0;
-  }
-
-  if (status == "HUMIDE") {
-    return 1;
-  }
-
-  return 2;
-}
-
+// =======================
+// Wi-Fi
+// =======================
 void connectWiFi() {
   Serial.print("Connexion WiFi");
 
@@ -76,6 +85,9 @@ void connectWiFi() {
   Serial.println(WiFi.localIP());
 }
 
+// =======================
+// Diagnostic réseau
+// =======================
 void debugNetwork() {
   Serial.println("Diagnostic reseau...");
 
@@ -102,9 +114,12 @@ void debugNetwork() {
   }
 }
 
+// =======================
+// MQTT
+// =======================
 void connectMQTT() {
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
-  mqttClient.setBufferSize(512);
+  mqttClient.setBufferSize(1024);
   mqttClient.setSocketTimeout(15);
   mqttClient.setKeepAlive(30);
 
@@ -127,35 +142,267 @@ void connectMQTT() {
   }
 }
 
-void handleLocalAlert(bool alert) {
-  digitalWrite(LED_PIN, alert ? HIGH : LOW);
+// =======================
+// Lecture HC-SR04
+// =======================
+float readDistanceCmOnce() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
 
-  if (alert) {
-    tone(BUZZER_PIN, 1000);
-  } else {
-    noTone(BUZZER_PIN);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+
+  digitalWrite(TRIG_PIN, LOW);
+
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000);
+
+  if (duration == 0) {
+    return MAX_WATER_HEIGHT_CM;
+  }
+
+  float distanceCm = duration * 0.0343 / 2.0;
+
+  if (distanceCm < 0) {
+    distanceCm = 0;
+  }
+
+  if (distanceCm > MAX_WATER_HEIGHT_CM) {
+    distanceCm = MAX_WATER_HEIGHT_CM;
+  }
+
+  return distanceCm;
+}
+
+float readDistanceCm() {
+  const int samples = 5;
+  float total = 0.0;
+
+  for (int i = 0; i < samples; i++) {
+    total += readDistanceCmOnce();
+    delay(20);
+  }
+
+  return total / samples;
+}
+
+// =======================
+// Lecture pluie simulée
+// =======================
+int readRainIntensity() {
+  int raw = analogRead(RAIN_SENSOR_PIN);
+
+  int percent = map(raw, 0, 4095, 0, 100);
+
+  if (percent < 0) {
+    percent = 0;
+  }
+
+  if (percent > 100) {
+    percent = 100;
+  }
+
+  return percent;
+}
+
+// =======================
+// Tendance montée / descente
+// =======================
+String getTrendLabel(float waterDeltaCm) {
+  if (waterDeltaCm > 2.0) {
+    return "RISING";
+  }
+
+  if (waterDeltaCm < -2.0) {
+    return "FALLING";
+  }
+
+  return "STABLE";
+}
+
+int getTrendCode(float waterDeltaCm) {
+  if (waterDeltaCm > 2.0) {
+    return 1;
+  }
+
+  if (waterDeltaCm < -2.0) {
+    return -1;
+  }
+
+  return 0;
+}
+
+// =======================
+// Calcul du risque
+// =======================
+String getRiskLevel(float waterPercent, int rainIntensity, float waterDeltaCm) {
+  bool waterRisingFast = waterDeltaCm >= 8.0;
+
+  if (waterPercent >= 85 || (waterPercent >= 75 && rainIntensity >= 70)) {
+    return "CRITICAL";
+  }
+
+  if (waterPercent >= 65 || rainIntensity >= 80 || (waterPercent >= 55 && waterRisingFast)) {
+    return "WARNING";
+  }
+
+  if (waterPercent >= 35 || rainIntensity >= 45) {
+    return "WATCH";
+  }
+
+  return "NORMAL";
+}
+
+int getRiskCode(String riskLevel) {
+  if (riskLevel == "NORMAL") {
+    return 0;
+  }
+
+  if (riskLevel == "WATCH") {
+    return 1;
+  }
+
+  if (riskLevel == "WARNING") {
+    return 2;
+  }
+
+  return 3;
+}
+
+int calculateRiskScore(float waterPercent, int rainIntensity, float waterDeltaCm) {
+  int trendBoost = 0;
+
+  if (waterDeltaCm >= 8.0) {
+    trendBoost = 15;
+  } else if (waterDeltaCm >= 4.0) {
+    trendBoost = 8;
+  }
+
+  int score = (int)((waterPercent * 0.70) + (rainIntensity * 0.25) + trendBoost);
+
+  if (score < 0) {
+    score = 0;
+  }
+
+  if (score > 100) {
+    score = 100;
+  }
+
+  return score;
+}
+
+// =======================
+// LEDs + buzzer
+// =======================
+void turnOffIndicators() {
+  digitalWrite(LED_GREEN_PIN, LOW);
+  digitalWrite(LED_YELLOW_PIN, LOW);
+  digitalWrite(LED_RED_PIN, LOW);
+  noTone(BUZZER_PIN);
+}
+
+void handleLocalAlert(String riskLevel) {
+  turnOffIndicators();
+
+  if (riskLevel == "NORMAL") {
+    digitalWrite(LED_GREEN_PIN, HIGH);
+    return;
+  }
+
+  if (riskLevel == "WATCH") {
+    digitalWrite(LED_YELLOW_PIN, HIGH);
+    return;
+  }
+
+  if (riskLevel == "WARNING") {
+    digitalWrite(LED_YELLOW_PIN, HIGH);
+    tone(BUZZER_PIN, 700);
+    return;
+  }
+
+  if (riskLevel == "CRITICAL") {
+    digitalWrite(LED_RED_PIN, HIGH);
+    tone(BUZZER_PIN, 1200);
+    return;
   }
 }
 
+// =======================
+// Publication MQTT
+// =======================
 void publishTelemetry() {
-  int waterLevel = analogRead(WATER_SENSOR_PIN);
-  String status = getStatus(waterLevel);
-  int statusCode = getStatusCode(status);
-  bool alert = status == "DANGER";
+  float distanceCm = readDistanceCm();
 
-  handleLocalAlert(alert);
+  // Plus la distance est faible, plus le niveau d’eau est élevé.
+  float waterLevelCm = MAX_WATER_HEIGHT_CM - distanceCm;
 
-  StaticJsonDocument<256> doc;
+  if (waterLevelCm < 0) {
+    waterLevelCm = 0;
+  }
 
+  if (waterLevelCm > MAX_WATER_HEIGHT_CM) {
+    waterLevelCm = MAX_WATER_HEIGHT_CM;
+  }
+
+  float waterPercent = (waterLevelCm / MAX_WATER_HEIGHT_CM) * 100.0;
+  int rainIntensity = readRainIntensity();
+
+  float waterDeltaCm = 0.0;
+
+  if (previousWaterLevelCm >= 0) {
+    waterDeltaCm = waterLevelCm - previousWaterLevelCm;
+  }
+
+  previousWaterLevelCm = waterLevelCm;
+
+  String trendLabel = getTrendLabel(waterDeltaCm);
+  int trendCode = getTrendCode(waterDeltaCm);
+
+  String riskLevel = getRiskLevel(waterPercent, rainIntensity, waterDeltaCm);
+  int riskCode = getRiskCode(riskLevel);
+  int riskScore = calculateRiskScore(waterPercent, rainIntensity, waterDeltaCm);
+
+  bool alert = riskLevel == "WARNING" || riskLevel == "CRITICAL";
+  int alertValue = alert ? 1 : 0;
+
+  int ledGreenState = riskLevel == "NORMAL" ? 1 : 0;
+  int ledYellowState = riskLevel == "WATCH" || riskLevel == "WARNING" ? 1 : 0;
+  int ledRedState = riskLevel == "CRITICAL" ? 1 : 0;
+  int buzzerState = alert ? 1 : 0;
+
+  handleLocalAlert(riskLevel);
+
+  StaticJsonDocument<1024> doc;
+
+  doc["project"] = PROJECT_NAME;
   doc["device_id"] = DEVICE_ID;
-  doc["water_level"] = waterLevel;
-  doc["status"] = status;
-  doc["status_code"] = statusCode;
-  doc["alert"] = alert;
-  doc["alert_value"] = alert ? 1 : 0;
-  doc["source"] = "wokwi";
+  doc["location"] = LOCATION;
+  doc["source"] = SOURCE;
 
-  char payload[256];
+  doc["distance_cm"] = distanceCm;
+  doc["water_level_cm"] = waterLevelCm;
+  doc["water_percent"] = waterPercent;
+  doc["rain_intensity"] = rainIntensity;
+
+  doc["water_delta_cm"] = waterDeltaCm;
+  doc["trend"] = trendLabel;
+  doc["trend_code"] = trendCode;
+
+  doc["risk_level"] = riskLevel;
+  doc["risk_code"] = riskCode;
+  doc["risk_score"] = riskScore;
+
+  doc["alert"] = alert;
+  doc["alert_value"] = alertValue;
+
+  doc["led_green_state"] = ledGreenState;
+  doc["led_yellow_state"] = ledYellowState;
+  doc["led_red_state"] = ledRedState;
+  doc["buzzer_state"] = buzzerState;
+
+  doc["wifi_rssi"] = WiFi.RSSI();
+  doc["uptime_sec"] = millis() / 1000;
+
+  char payload[1024];
   serializeJson(doc, payload);
 
   bool published = mqttClient.publish(MQTT_TOPIC, payload);
@@ -165,29 +412,46 @@ void publishTelemetry() {
   Serial.println(payload);
 }
 
+// =======================
+// Setup
+// =======================
 void setup() {
   Serial.begin(115200);
+  delay(1000);
 
-  pinMode(WATER_SENSOR_PIN, INPUT);
-  pinMode(LED_PIN, OUTPUT);
+  pinMode(RAIN_SENSOR_PIN, INPUT);
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  pinMode(LED_GREEN_PIN, OUTPUT);
+  pinMode(LED_YELLOW_PIN, OUTPUT);
+  pinMode(LED_RED_PIN, OUTPUT);
+
   pinMode(BUZZER_PIN, OUTPUT);
 
-  digitalWrite(LED_PIN, LOW);
-  noTone(BUZZER_PIN);
+  turnOffIndicators();
 
   connectWiFi();
   debugNetwork();
   connectMQTT();
 }
 
+// =======================
+// Loop
+// =======================
 void loop() {
+  if (WiFi.status() != WL_CONNECTED) {
+    connectWiFi();
+  }
+
   if (!mqttClient.connected()) {
     connectMQTT();
   }
 
   mqttClient.loop();
 
-  if (millis() - lastPublish >= PUBLISH_INTERVAL) {
+  if (millis() - lastPublish >= PUBLISH_INTERVAL_MS) {
     lastPublish = millis();
     publishTelemetry();
   }
@@ -203,41 +467,80 @@ void loop() {
   "author": "Mica Tahintsoa",
   "editor": "wokwi",
   "parts": [
-    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": -86.4, "left": 225.64, "attrs": {} },
-    { "type": "wokwi-potentiometer", "id": "pot1", "top": -174.1, "left": 115, "attrs": {} },
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": -67.2, "left": 148.84, "attrs": {} },
+    { "type": "wokwi-hc-sr04", "id": "ultrasonic1", "top": -286.5, "left": -13.7, "attrs": {} },
+    { "type": "wokwi-potentiometer", "id": "rain1", "top": -164.5, "left": -86.6, "attrs": {} },
     {
       "type": "wokwi-led",
-      "id": "led1",
-      "top": -118.8,
-      "left": 368.6,
+      "id": "ledGreen",
+      "top": -253.2,
+      "left": 426.2,
+      "attrs": { "color": "green" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledYellow",
+      "top": -176.4,
+      "left": 464.6,
+      "attrs": { "color": "yellow" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledRed",
+      "top": -99.6,
+      "left": 512.6,
       "attrs": { "color": "red" }
     },
     {
       "type": "wokwi-resistor",
-      "id": "r1",
-      "top": 71.15,
-      "left": 364.8,
+      "id": "rGreen",
+      "top": -149.65,
+      "left": 307.2,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "rYellow",
+      "top": -92.05,
+      "left": 307.2,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "rRed",
+      "top": 51.95,
+      "left": 307.2,
       "attrs": { "value": "220" }
     },
     {
       "type": "wokwi-buzzer",
       "id": "bz1",
-      "top": -208.8,
-      "left": 251.4,
+      "top": 98.4,
+      "left": 385.8,
       "attrs": { "volume": "0.1" }
     }
   ],
   "connections": [
     [ "esp:TX", "$serialMonitor:RX", "", [] ],
     [ "esp:RX", "$serialMonitor:TX", "", [] ],
-    [ "esp:GND.1", "pot1:GND", "black", [ "h0" ] ],
-    [ "pot1:VCC", "esp:3V3", "red", [ "v0" ] ],
-    [ "esp:34", "pot1:SIG", "green", [ "h0" ] ],
-    [ "led1:C", "esp:GND.2", "black", [ "v0" ] ],
-    [ "r1:2", "led1:A", "red", [ "v0" ] ],
-    [ "r1:1", "esp:2", "red", [ "v0" ] ],
-    [ "bz1:1", "esp:15", "orange", [ "v0" ] ],
-    [ "esp:GND.3", "bz1:2", "black", [ "h0" ] ]
+    [ "ultrasonic1:VCC", "esp:5V", "red", [ "v0" ] ],
+    [ "ultrasonic1:GND", "esp:GND.1", "black", [ "v0" ] ],
+    [ "ultrasonic1:TRIG", "esp:5", "green", [ "v0" ] ],
+    [ "ultrasonic1:ECHO", "esp:18", "green", [ "v0" ] ],
+    [ "rain1:VCC", "esp:3V3", "red", [ "v0" ] ],
+    [ "rain1:GND", "esp:GND.1", "black", [ "v0" ] ],
+    [ "rain1:SIG", "esp:34", "green", [ "h0" ] ],
+    [ "esp:12", "rGreen:1", "green", [ "v0" ] ],
+    [ "rGreen:2", "ledGreen:A", "green", [ "v0" ] ],
+    [ "ledGreen:C", "esp:GND.2", "black", [ "v0" ] ],
+    [ "esp:14", "rYellow:1", "yellow", [ "v0" ] ],
+    [ "rYellow:2", "ledYellow:A", "yellow", [ "v0" ] ],
+    [ "ledYellow:C", "esp:GND.2", "black", [ "v0" ] ],
+    [ "esp:2", "rRed:1", "red", [ "h0" ] ],
+    [ "rRed:2", "ledRed:A", "red", [ "v0" ] ],
+    [ "ledRed:C", "esp:GND.2", "black", [ "v0" ] ],
+    [ "esp:15", "bz1:1", "orange", [ "v0" ] ],
+    [ "bz1:2", "esp:GND.3", "black", [ "v0" ] ]
   ],
   "dependencies": {}
 }

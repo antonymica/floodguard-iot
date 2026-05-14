@@ -1,66 +1,26 @@
 {
-  "uid": "floodguard-iot",
-  "title": "FloodGuard IoT - Detection Inondation",
+  "uid": "floodguard-smart-area-v3",
+  "title": "FloodGuard Smart Area - Monitoring Inondation",
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 3,
   "refresh": "5s",
-  "tags": ["iot", "mqtt", "floodguard"],
+  "tags": ["iot", "mqtt", "floodguard", "flood-monitoring", "wokwi"],
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
   "panels": [
     {
       "id": 1,
-      "type": "timeseries",
-      "title": "Niveau d'eau",
-      "datasource": {
-        "type": "influxdb",
-        "uid": "influxdb-floodguard"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "query": "from(bucket: \"floodguard\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"water_level\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"water_level\")"
-        }
-      ],
-      "gridPos": {
-        "h": 9,
-        "w": 16,
-        "x": 0,
-        "y": 0
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1300
-              },
-              {
-                "color": "red",
-                "value": 2700
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
-        }
-      }
-    },
-    {
-      "id": 2,
       "type": "stat",
-      "title": "Dernier niveau d'eau",
+      "title": "État du risque",
       "datasource": {
         "type": "influxdb",
         "uid": "influxdb-floodguard"
@@ -68,18 +28,41 @@
       "targets": [
         {
           "refId": "A",
-          "query": "from(bucket: \"floodguard\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"water_level\")\n  |> last()"
+          "query": "from(bucket: \"floodguard\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"risk_code\")\n  |> last()\n  |> map(fn: (r) => ({ r with _value: float(v: r._value) }))"
         }
       ],
       "gridPos": {
-        "h": 9,
-        "w": 8,
-        "x": 16,
-        "y": 0
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
           "unit": "none",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "NORMAL",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "WATCH",
+                  "color": "blue"
+                },
+                "2": {
+                  "text": "WARNING",
+                  "color": "orange"
+                },
+                "3": {
+                  "text": "CRITICAL",
+                  "color": "red"
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -88,12 +71,16 @@
                 "value": null
               },
               {
+                "color": "blue",
+                "value": 1
+              },
+              {
                 "color": "orange",
-                "value": 1300
+                "value": 2
               },
               {
                 "color": "red",
-                "value": 2700
+                "value": 3
               }
             ]
           }
@@ -107,16 +94,16 @@
           "fields": ""
         },
         "orientation": "auto",
-        "textMode": "auto",
+        "textMode": "value_and_name",
         "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto"
+        "graphMode": "none",
+        "justifyMode": "center"
       }
     },
     {
-      "id": 3,
-      "type": "timeseries",
-      "title": "Alerte inondation",
+      "id": 2,
+      "type": "gauge",
+      "title": "Niveau d’eau calculé",
       "datasource": {
         "type": "influxdb",
         "uid": "influxdb-floodguard"
@@ -124,20 +111,155 @@
       "targets": [
         {
           "refId": "A",
-          "query": "from(bucket: \"floodguard\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"alert_value\")\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> yield(name: \"alert_value\")"
+          "query": "from(bucket: \"floodguard\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"water_percent\")\n  |> last()\n  |> map(fn: (r) => ({ r with _value: float(v: r._value) }))"
         }
       ],
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 9
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 35
+              },
+              {
+                "color": "orange",
+                "value": 65
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      }
+    },
+    {
+      "id": 3,
+      "type": "gauge",
+      "title": "Intensité de pluie",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-floodguard"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"floodguard\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"rain_intensity\")\n  |> last()\n  |> map(fn: (r) => ({ r with _value: float(v: r._value) }))"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 45
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Alerte locale",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-floodguard"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"floodguard\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"alert_value\")\n  |> last()\n  |> map(fn: (r) => ({ r with _value: float(v: r._value) }))"
+        }
+      ],
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 5
       },
       "fieldConfig": {
         "defaults": {
           "unit": "none",
-          "min": 0,
-          "max": 1,
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "OK",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "ALERTE",
+                  "color": "red"
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -153,12 +275,24 @@
           }
         },
         "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center"
       }
     },
     {
-      "id": 4,
-      "type": "timeseries",
-      "title": "Etat du capteur",
+      "id": 5,
+      "type": "gauge",
+      "title": "Hauteur d’eau simulée",
       "datasource": {
         "type": "influxdb",
         "uid": "influxdb-floodguard"
@@ -166,20 +300,521 @@
       "targets": [
         {
           "refId": "A",
-          "query": "from(bucket: \"floodguard\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"status_code\")\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> yield(name: \"status_code\")"
+          "query": "from(bucket: \"floodguard\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"water_level_cm\")\n  |> last()\n  |> map(fn: (r) => ({ r with _value: float(v: r._value) }))"
         }
       ],
       "gridPos": {
-        "h": 8,
-        "w": 12,
+        "x": 0,
+        "y": 5,
+        "w": 6,
+        "h": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cm",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 35
+              },
+              {
+                "color": "orange",
+                "value": 65
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      }
+    },
+    {
+      "id": 6,
+      "type": "gauge",
+      "title": "Distance capteur ↔ eau",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-floodguard"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"floodguard\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"distance_cm\")\n  |> last()\n  |> map(fn: (r) => ({ r with _value: float(v: r._value) }))"
+        }
+      ],
+      "gridPos": {
+        "x": 6,
+        "y": 5,
+        "w": 6,
+        "h": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cm",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 15
+              },
+              {
+                "color": "yellow",
+                "value": 35
+              },
+              {
+                "color": "green",
+                "value": 65
+              }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      }
+    },
+    {
+      "id": 7,
+      "type": "gauge",
+      "title": "Score de risque",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-floodguard"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"floodguard\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"risk_score\")\n  |> last()\n  |> map(fn: (r) => ({ r with _value: float(v: r._value) }))"
+        }
+      ],
+      "gridPos": {
         "x": 12,
-        "y": 9
+        "y": 5,
+        "w": 6,
+        "h": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 40
+              },
+              {
+                "color": "orange",
+                "value": 65
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Sirène / buzzer",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-floodguard"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"floodguard\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"buzzer_state\")\n  |> last()\n  |> map(fn: (r) => ({ r with _value: float(v: r._value) }))"
+        }
+      ],
+      "gridPos": {
+        "x": 18,
+        "y": 5,
+        "w": 6,
+        "h": 6
       },
       "fieldConfig": {
         "defaults": {
           "unit": "none",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "OFF",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "ON",
+                  "color": "red"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Évolution du niveau d’eau et de la pluie",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-floodguard"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"floodguard\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"water_percent\" or r._field == \"rain_intensity\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({ r with _value: float(v: r._value) }))\n  |> yield(name: \"series\")"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
           "min": 0,
-          "max": 2,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 35
+              },
+              {
+                "color": "orange",
+                "value": 65
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Score de risque dans le temps",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-floodguard"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"floodguard\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"risk_score\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({ r with _value: float(v: r._value) }))\n  |> yield(name: \"risk_score\")"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 40
+              },
+              {
+                "color": "orange",
+                "value": 65
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "state-timeline",
+      "title": "Timeline des états",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-floodguard"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"floodguard\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"risk_code\")\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> map(fn: (r) => ({ r with _value: float(v: r._value) }))\n  |> yield(name: \"risk_code\")"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 12,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "NORMAL",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "WATCH",
+                  "color": "blue"
+                },
+                "2": {
+                  "text": "WARNING",
+                  "color": "orange"
+                },
+                "3": {
+                  "text": "CRITICAL",
+                  "color": "red"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 2
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "mergeValues": true,
+        "showValue": "always",
+        "alignValue": "center",
+        "rowHeight": 0.9
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Distance et hauteur d’eau",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-floodguard"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"floodguard\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"distance_cm\" or r._field == \"water_level_cm\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({ r with _value: float(v: r._value) }))\n  |> yield(name: \"series\")"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 19,
+        "w": 12,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cm",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 35
+              },
+              {
+                "color": "orange",
+                "value": 65
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Variation du niveau d’eau",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-floodguard"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"floodguard\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"water_delta_cm\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({ r with _value: float(v: r._value) }))\n  |> yield(name: \"water_delta_cm\")"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 8,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cm",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -189,21 +824,196 @@
               },
               {
                 "color": "orange",
-                "value": 1
+                "value": 4
               },
               {
                 "color": "red",
-                "value": 2
+                "value": 8
               }
             ]
           }
         },
         "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Tendance actuelle",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-floodguard"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"floodguard\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"trend_code\")\n  |> last()\n  |> map(fn: (r) => ({ r with _value: float(v: r._value) }))"
+        }
+      ],
+      "gridPos": {
+        "x": 8,
+        "y": 26,
+        "w": 8,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "DESCENTE",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "STABLE",
+                  "color": "blue"
+                },
+                "1": {
+                  "text": "MONTÉE",
+                  "color": "orange"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 15,
+      "type": "gauge",
+      "title": "Qualité Wi‑Fi RSSI",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-floodguard"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"floodguard\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) => r._field == \"wifi_rssi\")\n  |> last()\n  |> map(fn: (r) => ({ r with _value: float(v: r._value) }))"
+        }
+      ],
+      "gridPos": {
+        "x": 16,
+        "y": 26,
+        "w": 8,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dBm",
+          "min": -100,
+          "max": -30,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": -85
+              },
+              {
+                "color": "yellow",
+                "value": -70
+              },
+              {
+                "color": "green",
+                "value": -60
+              }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": ["lastNotNull"],
+          "fields": ""
+        },
+        "orientation": "auto",
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      }
+    },
+    {
+      "id": 16,
+      "type": "table",
+      "title": "Dernières mesures brutes",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-floodguard"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"floodguard\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"floodguard\")\n  |> filter(fn: (r) =>\n    r._field == \"distance_cm\" or\n    r._field == \"water_level_cm\" or\n    r._field == \"water_percent\" or\n    r._field == \"rain_intensity\" or\n    r._field == \"risk_score\" or\n    r._field == \"risk_code\" or\n    r._field == \"alert_value\" or\n    r._field == \"buzzer_state\" or\n    r._field == \"wifi_rssi\" or\n    r._field == \"uptime_sec\"\n  )\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\", \"device_id\", \"location\", \"risk_level\", \"trend\"])\n"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "countRows": false
+        }
       }
     }
-  ],
-  "time": {
-    "from": "now-15m",
-    "to": "now"
-  }
+  ]
 }
